@@ -1,0 +1,41 @@
+# This will act as our base image for building. It contains all the source files.
+# It is defined for different rust channels, and will use rustup to switch to the
+# correct channel.
+build_env(rust_channel) :-
+  from("rust:alpine")::set_workdir("/usr/src/app"),
+  run("apk add --update --no-cache curl git musl-dev"),
+  # install wasm-pack
+  run("curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh"),
+  rust_channel(rust_channel),
+  copy(".", ".").
+
+# This function selects the rust channel we want to use.
+rust_channel(channel) :-
+  # restrict the set of values for channel
+  (channel = "stable"; channel = "nightly"; channel = "beta"),
+  run(f"rustup default ${channel}").
+
+# cargo_build(profile, out_dir).
+# Think of the first argument as an input, and the second (out_dir) as an output.
+cargo_build("dev", "target/debug") :- run("cargo build").
+cargo_build("release", "target/release") :- run("cargo build --release").
+
+wasm_build("dev") :- run("wasm-pack build --target web").
+wasm_build("release") :- run("wasm-pack build --target web --release").
+
+app(profile, channel) :-
+  (
+    from("alpine")::set_workdir("/usr/src/app"),
+    (
+      # This is a sub-image which builds the server binary
+      build_env(channel)::set_workdir("server"),
+      cargo_build(profile, out_dir)
+    )::copy(f"${out_dir}/server", "."),
+    (
+      # Another sub-image which builds the client (frontend), resulting in all the necessary static assets.
+      build_env(channel)::set_workdir("client"),
+      wasm_build(profile),
+      run("mkdir dist && mv index.html pkg dist/")
+    )::copy("dist", "./dist")
+  )::set_env("STATIC_DIR", "./dist")
+   ::set_entrypoint("/usr/src/app/server").
