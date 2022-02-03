@@ -38,4 +38,4 @@ app(profile, channel) :-
       run("mkdir dist && mv index.html pkg dist/")
     )::copy("dist", "./dist")
   )::set_env("STATIC_DIR", "./dist")
-   ::set_entrypoint("/usr/src/app/server").
+   ::set_entrypoint("./server").
